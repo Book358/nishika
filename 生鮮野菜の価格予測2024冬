@@ -1,0 +1,509 @@
+# 生鮮野菜の価格予測2024冬
+# (Nishika 定期開催コンペ)
+import pandas as pd
+import numpy as np
+import datetime as dt
+import warnings
+import itertools
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import math
+from sklearn.metrics import mean_squared_error
+from google.colab import drive
+drive.mount('/content/drive')
+pd.options.display.max_rows = 5
+warnings.simplefilter('ignore')
+
+# 関数 (orderの最適化)
+def selectparameter(DATA, s):
+    p = d = q = range(0, 2)
+    pdq = list(itertools.product(p, d, q))
+    seasonal_pdq = [(x[0], x[1], x[2], s) for x in list(itertools.product(p, d, q))]
+    parameters = []
+    BICs = np.array([])
+    for param in pdq:
+        for param_seasonal in seasonal_pdq:
+            try:
+                mod = sm.tsa.statespace.SARIMAX(DATA,
+                                                order=param,
+                                                seasonal_order=param_seasonal)
+                results = mod.fit()
+                parameters.append([param, param_seasonal, results.bic])
+                BICs = np.append(BICs, results.bic)
+            except:
+                continue
+    return parameters[np.argmin(BICs)]
+
+# データセット
+train = pd.read_csv('/content/drive/MyDrive/Datasets/生鮮野菜の価格予測2024冬_train.csv')
+train
+test = pd.read_csv('/content/drive/MyDrive/Datasets/生鮮野菜の価格予測2024冬_test.csv')
+test
+weather = pd.read_csv('/content/drive/MyDrive/Datasets/生鮮野菜の価格予測2024冬_weather.csv')
+weather
+sub = pd.read_csv('/content/drive/MyDrive/Datasets/生鮮野菜の価格予測2024冬_sub.csv')
+sub
+
+# 予測する野菜
+for kind in test["kind"].unique():
+    print(kind)
+
+# 過去5年間のデータを抽出
+train.index = pd.to_datetime(train["date"], format = "%Y%m%d")  # indexにdatetime型の日付を代入
+train = train[train.index > dt.datetime(2018,7,1)]              # 過去5年間のデータを抽出
+train
+
+# 【だいこん】前処理
+daikon = train[train.kind == 'だいこん']
+daikon.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+daikon = round(daikon.resample(rule="W").mean())  # 週毎の平均値に変換
+daikon
+
+# 【だいこん】価格推移をプロット
+plt.figure(figsize=(24, 8))
+plt.plot(daikon)
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.show()
+
+# ハイパーパラメータ探索 (周期：52週＝12カ月)
+param_daikon = selectparameter(daikon, 52)
+param_daikon
+
+# 【だいこん】モデル構築 (SARIMA)
+SARIMA_daikon = sm.tsa.statespace.SARIMAX(daikon, order=(1,1,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_daikon.bic
+
+# 【だいこん】予測値をプロット
+pred_daikon = pd.DataFrame(round(SARIMA_daikon.predict("2018-07-08", "2024-08-30"), 1))
+pred_daikon = pred_daikon.rename(columns={'predicted_mean':'mode_price'})
+pred_daikon
+plt.figure(figsize=(24, 8))
+plt.plot(daikon)
+plt.plot(pred_daikon, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+
+# 【だいこん】Submitデータを作成
+pred_daikon = pred_daikon.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_daikon = round(pred_daikon.interpolate(), 1)
+pred_daikon = pred_daikon.reset_index()
+pred_daikon.insert(0, "kind", "だいこん")
+pred_daikon = pred_daikon.rename(columns={'index':'date'})
+pred_daikon
+sub_daikon = sub[sub.kind == 'だいこん']
+sub_daikon['date'] = pd.to_datetime(sub['date'], format='%Y%m%d')
+sub_daikon = sub_daikon.drop('mode_price', axis=1)
+sub_daikon
+sub_daikon = pd.merge(sub_daikon, pred_daikon, on=['kind', 'date'], how="left")
+sub_daikon["date"] = sub_daikon["date"].dt.strftime('%Y%m%d').astype(int)
+sub_daikon
+
+# 【こまつな】
+komatsuna = train[train.kind == 'こまつな']
+komatsuna.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+komatsuna = round(komatsuna.resample(rule="W").mean())
+selectparameter(komatsuna, 52)
+SARIMA_komatsuna = sm.tsa.statespace.SARIMAX(komatsuna, order=(1,1,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_komatsuna.bic
+pred_komatsuna = pd.DataFrame(round(SARIMA_komatsuna.predict("2018-07-08", "2024-08-30"), 1))
+pred_komatsuna = pred_komatsuna.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(komatsuna)
+plt.plot(pred_komatsuna, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_komatsuna = pred_komatsuna.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_komatsuna = round(pred_komatsuna.interpolate(), 1)
+pred_komatsuna = pred_komatsuna.reset_index()
+pred_komatsuna.insert(0, "kind", "こまつな")
+pred_komatsuna = pred_komatsuna.rename(columns={'index':'date'})
+pred_komatsuna["date"] = pred_komatsuna["date"].dt.strftime('%Y%m%d').astype(int)
+sub_komatsuna = sub[sub.kind == 'こまつな']
+sub_komatsuna = sub_komatsuna.drop('mode_price', axis=1)
+sub_komatsuna = pd.merge(sub_komatsuna, pred_komatsuna, on=['kind', 'date'], how="left")
+sub_komatsuna
+
+# 【ほうれんそう】
+hourensou = train[train.kind == 'ほうれんそう']
+hourensou.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+hourensou = round(hourensou.resample(rule="W").mean())
+selectparameter(hourensou, 52)
+SARIMA_hourensou = sm.tsa.statespace.SARIMAX(hourensou, order=(1,0,0), seasonal_order=(0,1,1,52)).fit()
+SARIMA_hourensou.bic
+pred_hourensou = pd.DataFrame(round(SARIMA_hourensou.predict("2018-07-08", "2024-08-30"), 1))
+pred_hourensou = pred_hourensou.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(hourensou)
+plt.plot(pred_hourensou, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_hourensou = pred_hourensou.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_hourensou = round(pred_hourensou.interpolate(), 1)
+pred_hourensou = pred_hourensou.reset_index()
+pred_hourensou.insert(0, "kind", "ほうれんそう")
+pred_hourensou = pred_hourensou.rename(columns={'index':'date'})
+pred_hourensou["date"] = pred_hourensou["date"].dt.strftime('%Y%m%d').astype(int)
+sub_hourensou = sub[sub.kind == 'ほうれんそう']
+sub_hourensou = sub_hourensou.drop('mode_price', axis=1)
+sub_hourensou = pd.merge(sub_hourensou, pred_hourensou, on=['kind', 'date'], how="left")
+sub_hourensou
+
+# 【ねぎ】
+negi = train[train.kind == 'ねぎ']
+negi.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+negi = round(negi.resample(rule="W").mean())
+selectparameter(negi, 52)
+SARIMA_negi = sm.tsa.statespace.SARIMAX(negi, order=(0,1,0), seasonal_order=(0,1,1,52)).fit()
+SARIMA_negi.bic
+pred_negi = pd.DataFrame(round(SARIMA_negi.predict("2018-07-08", "2024-08-30"), 1))
+pred_negi = pred_negi.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(negi)
+plt.plot(pred_negi, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_negi = pred_negi.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_negi = round(pred_negi.interpolate(), 1)
+pred_negi = pred_negi.reset_index()
+pred_negi.insert(0, "kind", "ねぎ")
+pred_negi = pred_negi.rename(columns={'index':'date'})
+pred_negi["date"] = pred_negi["date"].dt.strftime('%Y%m%d').astype(int)
+sub_negi = sub[sub.kind == 'ねぎ']
+sub_negi = sub_negi.drop('mode_price', axis=1)
+sub_negi = pd.merge(sub_negi, pred_negi, on=['kind', 'date'], how="left")
+sub_negi
+
+# 【きゅうり】
+kyuri = train[train.kind == 'きゅうり']
+kyuri.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+kyuri = round(kyuri.resample(rule="W").mean())
+selectparameter(kyuri, 52)
+SARIMA_kyuri = sm.tsa.statespace.SARIMAX(kyuri, order=(1,1,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_kyuri.bic
+pred_kyuri = pd.DataFrame(round(SARIMA_kyuri.predict("2018-07-08", "2024-08-30"), 1))
+pred_kyuri = pred_kyuri.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(kyuri)
+plt.plot(pred_kyuri, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_kyuri = pred_kyuri.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_kyuri = round(pred_kyuri.interpolate(), 1)
+pred_kyuri = pred_kyuri.reset_index()
+pred_kyuri.insert(0, "kind", "きゅうり")
+pred_kyuri = pred_kyuri.rename(columns={'index':'date'})
+pred_kyuri["date"] = pred_kyuri["date"].dt.strftime('%Y%m%d').astype(int)
+sub_kyuri = sub[sub.kind == 'きゅうり']
+sub_kyuri = sub_kyuri.drop('mode_price', axis=1)
+sub_kyuri = pd.merge(sub_kyuri, pred_kyuri, on=['kind', 'date'], how="left")
+sub_kyuri
+
+# 【じゃがいも】
+zyagaimo = train[train.kind == 'じゃがいも']
+zyagaimo.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+zyagaimo = round(zyagaimo.resample(rule="W").mean())
+selectparameter(zyagaimo, 52)
+SARIMA_zyagaimo = sm.tsa.statespace.SARIMAX(zyagaimo, order=(0,1,0), seasonal_order=(0,1,1,52)).fit()
+SARIMA_zyagaimo.bic
+pred_zyagaimo = pd.DataFrame(round(SARIMA_zyagaimo.predict("2018-07-08", "2024-08-30"), 1))
+pred_zyagaimo = pred_zyagaimo.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(zyagaimo)
+plt.plot(pred_zyagaimo, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_zyagaimo = pred_zyagaimo.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_zyagaimo = round(pred_zyagaimo.interpolate(), 1)
+pred_zyagaimo = pred_zyagaimo.reset_index()
+pred_zyagaimo.insert(0, "kind", "じゃがいも")
+pred_zyagaimo = pred_zyagaimo.rename(columns={'index':'date'})
+pred_zyagaimo["date"] = pred_zyagaimo["date"].dt.strftime('%Y%m%d').astype(int)
+sub_zyagaimo = sub[sub.kind == 'じゃがいも']
+sub_zyagaimo = sub_zyagaimo.drop('mode_price', axis=1)
+sub_zyagaimo = pd.merge(sub_zyagaimo, pred_zyagaimo, on=['kind', 'date'], how="left")
+sub_zyagaimo
+
+# 【とうもろこし】
+toumorokosi = train[train.kind == 'とうもろこし']
+toumorokosi.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+toumorokosi = round(toumorokosi.resample(rule="W").mean())
+selectparameter(toumorokosi, 52)
+SARIMA_toumorokosi = sm.tsa.statespace.SARIMAX(toumorokosi, order=(1,1,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_toumorokosi.bic
+pred_toumorokosi = pd.DataFrame(round(SARIMA_toumorokosi.predict("2018-07-08", "2024-08-30"), 1))
+pred_toumorokosi = pred_toumorokosi.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(toumorokosi)
+plt.plot(pred_toumorokosi, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_toumorokosi = pred_toumorokosi.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_toumorokosi = round(pred_toumorokosi.interpolate(), 1)
+pred_toumorokosi = pred_toumorokosi.reset_index()
+pred_toumorokosi.insert(0, "kind", "とうもろこし")
+pred_toumorokosi = pred_toumorokosi.rename(columns={'index':'date'})
+pred_toumorokosi["date"] = pred_toumorokosi["date"].dt.strftime('%Y%m%d').astype(int)
+sub_toumorokosi = sub[sub.kind == 'とうもろこし']
+sub_toumorokosi = sub_toumorokosi.drop('mode_price', axis=1)
+sub_toumorokosi = pd.merge(sub_toumorokosi, pred_toumorokosi, on=['kind', 'date'], how="left")
+sub_toumorokosi
+
+# 【いんげん】
+ingen = train[train.kind == 'いんげん']
+ingen.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+ingen = round(ingen.resample(rule="W").mean())
+selectparameter(ingen, 52)
+SARIMA_ingen = sm.tsa.statespace.SARIMAX(ingen, order=(1,1,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_ingen.bic
+pred_ingen = pd.DataFrame(round(SARIMA_ingen.predict("2018-07-08", "2024-08-30"), 1))
+pred_ingen = pred_ingen.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(ingen)
+plt.plot(pred_ingen, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_ingen = pred_ingen.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_ingen = round(pred_ingen.interpolate(), 1)
+pred_ingen = pred_ingen.reset_index()
+pred_ingen.insert(0, "kind", "いんげん")
+pred_ingen = pred_ingen.rename(columns={'index':'date'})
+pred_ingen["date"] = pred_ingen["date"].dt.strftime('%Y%m%d').astype(int)
+sub_ingen = sub[sub.kind == 'いんげん']
+sub_ingen = sub_ingen.drop('mode_price', axis=1)
+sub_ingen = pd.merge(sub_ingen, pred_ingen, on=['kind', 'date'], how="left")
+sub_ingen
+
+# 【えだまめ】
+edamame = train[train.kind == 'えだまめ']
+edamame.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+edamame = round(edamame.resample(rule="W").mean())
+selectparameter(edamame, 52)
+SARIMA_edamame = sm.tsa.statespace.SARIMAX(edamame, order=(1,0,0), seasonal_order=(0,1,1,52)).fit()
+SARIMA_edamame.bic
+pred_edamame = pd.DataFrame(round(SARIMA_edamame.predict("2018-07-08", "2024-08-30"), 1))
+pred_edamame = pred_edamame.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(edamame)
+plt.plot(pred_edamame, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_edamame = pred_edamame.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_edamame = round(pred_edamame.interpolate(), 1)
+pred_edamame = pred_edamame.reset_index()
+pred_edamame.insert(0, "kind", "えだまめ")
+pred_edamame = pred_edamame.rename(columns={'index':'date'})
+pred_edamame["date"] = pred_edamame["date"].dt.strftime('%Y%m%d').astype(int)
+sub_edamame = sub[sub.kind == 'えだまめ']
+sub_edamame = sub_edamame.drop('mode_price', axis=1)
+sub_edamame = pd.merge(sub_edamame, pred_edamame, on=['kind', 'date'], how="left")
+sub_edamame
+
+# 【レイシにがうり】
+reisinigauri = train[train.kind == 'レイシにがうり']
+reisinigauri.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+reisinigauri = round(reisinigauri.resample(rule="W").mean())
+selectparameter(reisinigauri, 52)
+SARIMA_reisinigauri = sm.tsa.statespace.SARIMAX(reisinigauri, order=(0,1,0), seasonal_order=(1,1,0,52)).fit()
+SARIMA_reisinigauri.bic
+pred_reisinigauri = pd.DataFrame(round(SARIMA_reisinigauri.predict("2018-07-08", "2024-08-30"), 1))
+pred_reisinigauri = pred_reisinigauri.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(reisinigauri)
+plt.plot(pred_reisinigauri, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_reisinigauri = pred_reisinigauri.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_reisinigauri = round(pred_reisinigauri.interpolate(), 1)
+pred_reisinigauri = pred_reisinigauri.reset_index()
+pred_reisinigauri.insert(0, "kind", "レイシにがうり")
+pred_reisinigauri = pred_reisinigauri.rename(columns={'index':'date'})
+pred_reisinigauri["date"] = pred_reisinigauri["date"].dt.strftime('%Y%m%d').astype(int)
+sub_reisinigauri = sub[sub.kind == 'レイシにがうり']
+sub_reisinigauri = sub_reisinigauri.drop('mode_price', axis=1)
+sub_reisinigauri = pd.merge(sub_reisinigauri, pred_reisinigauri, on=['kind', 'date'], how="left")
+sub_reisinigauri
+
+# 【ミニトマト】
+minitomato = train[train.kind == 'ミニトマト']
+minitomato.drop(["kind", "date", 'amount', 'area', "year", "weekno"], axis=1, inplace=True)
+minitomato = round(minitomato.resample(rule="W").mean())
+selectparameter(minitomato, 52)
+SARIMA_minitomato = sm.tsa.statespace.SARIMAX(minitomato, order=(1,0,1), seasonal_order=(0,1,1,52)).fit()
+SARIMA_minitomato.bic
+pred_minitomato = pd.DataFrame(round(SARIMA_minitomato.predict("2018-07-08", "2024-08-30"), 1))
+pred_minitomato = pred_minitomato.rename(columns={'predicted_mean':'mode_price'})
+plt.figure(figsize=(24, 8))
+plt.plot(minitomato)
+plt.plot(pred_minitomato, color="r")
+plt.axvspan('2018-07-01', '2018-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2018-08-01', '2018-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2019-07-01', '2019-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2019-08-01', '2019-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2020-07-01', '2020-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2020-08-01', '2020-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2021-07-01', '2021-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2021-08-01', '2021-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2022-07-01', '2022-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2022-08-01', '2022-08-31', facecolor='C1', alpha=0.2)
+plt.axvspan('2023-07-01', '2023-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2023-08-01', '2023-08-31', facecolor='C2', alpha=0.2)
+plt.axvspan('2024-07-01', '2024-07-31', facecolor='C0', alpha=0.2)
+plt.axvspan('2024-08-01', '2024-08-31', facecolor='C1', alpha=0.2)
+plt.show()
+pred_minitomato = pred_minitomato.reindex(pd.date_range(start='2023/7/30', end='2023/9/3'))
+pred_minitomato = round(pred_minitomato.interpolate(), 1)
+pred_minitomato = pred_minitomato.reset_index()
+pred_minitomato.insert(0, "kind", "ミニトマト")
+pred_minitomato = pred_minitomato.rename(columns={'index':'date'})
+pred_minitomato["date"] = pred_minitomato["date"].dt.strftime('%Y%m%d').astype(int)
+sub_minitomato = sub[sub.kind == 'ミニトマト']
+sub_minitomato = sub_minitomato.drop('mode_price', axis=1)
+sub_minitomato = pd.merge(sub_minitomato, pred_minitomato, on=['kind', 'date'], how="left")
+sub_minitomato
+
+# csvデータで保存
+sub_all = pd.concat([sub_daikon, sub_komatsuna, sub_hourensou, sub_negi, sub_kyuri, sub_zyagaimo, sub_toumorokosi, sub_ingen, sub_edamame, sub_reisinigauri, sub_minitomato])
+sub_all = sub_all.reset_index(drop=True)
+sub_all.to_csv('/content/drive/MyDrive/submission.csv', index=False)
+sub_all
